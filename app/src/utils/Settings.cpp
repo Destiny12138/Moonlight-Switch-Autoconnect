@@ -468,7 +468,34 @@ void Settings::load() {
                 }
             }
         }
-        
+
+        // Optional "autoconnect" section. Presence of the section + a valid
+        // app_id + at least one of host/mac enables auto-connect at launch.
+        // save() will round-trip the block when `present` is true so that
+        // unrelated settings changes do not wipe it out. Removing the block
+        // from settings.json by hand will leave `present` false and disable
+        // autoconnect on the next launch.
+        if (json_t* ac = json_object_get(root, "autoconnect")) {
+            if (json_typeof(ac) == JSON_OBJECT) {
+                m_autoconnect.present = true;
+                if (json_t* v = json_object_get(ac, "host")) {
+                    if (json_typeof(v) == JSON_STRING)
+                        m_autoconnect.host = json_string_value(v);
+                }
+                if (json_t* v = json_object_get(ac, "mac")) {
+                    if (json_typeof(v) == JSON_STRING)
+                        m_autoconnect.mac = json_string_value(v);
+                }
+                if (json_t* v = json_object_get(ac, "app_id")) {
+                    if (json_typeof(v) == JSON_INTEGER)
+                        m_autoconnect.app_id = (int)json_integer_value(v);
+                }
+                m_autoconnect.valid =
+                    (m_autoconnect.app_id != 0) &&
+                    (!m_autoconnect.host.empty() || !m_autoconnect.mac.empty());
+            }
+        }
+
         json_decref(root);
     }
 }
@@ -575,7 +602,22 @@ void Settings::save() {
             }
             json_object_set_new(root, "mapping_layouts", hosts);
         }
-        
+
+        // Round-trip the optional autoconnect block so it survives saves
+        // triggered by unrelated UI actions (overlay close, settings tab
+        // close, host/favorite mutations, etc.). Only written when load()
+        // actually saw the block in the source file.
+        if (m_autoconnect.present) {
+            if (json_t* ac = json_object()) {
+                if (!m_autoconnect.host.empty())
+                    json_object_set_new(ac, "host", json_string(m_autoconnect.host.c_str()));
+                if (!m_autoconnect.mac.empty())
+                    json_object_set_new(ac, "mac", json_string(m_autoconnect.mac.c_str()));
+                json_object_set_new(ac, "app_id", json_integer(m_autoconnect.app_id));
+                json_object_set_new(root, "autoconnect", ac);
+            }
+        }
+
         json_dump_file(root, settings_file_path(m_working_dir).c_str(), JSON_INDENT(4));
         json_decref(root);
     }

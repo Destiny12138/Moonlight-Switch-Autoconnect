@@ -1,6 +1,17 @@
-# Moonlight-Switch
+<p align="right">
+  <b>English</b> &nbsp;|&nbsp; <a href="README.zh-CN.md">简体中文</a>
+</p>
 
-Moonlight-Switch is a port of [Moonlight Game Streaming Project](https://github.com/moonlight-stream "Moonlight Game Streaming Project") for Nintendo Switch.
+# Moonlight-Switch-Autoconnect
+
+A friendly fork of [XITRIX/Moonlight-Switch](https://github.com/XITRIX/Moonlight-Switch) that adds two opt-in features on top of the upstream Switch port of the [Moonlight Game Streaming Project](https://github.com/moonlight-stream):
+
+- **[Auto-connect](#auto-connect)** — start streaming immediately on launch by adding a small block to `settings.json`. No code or UI changes needed.
+- **[Splash animation](#splash-animation)** — play your own pre-rendered animated boot intro on top of the main UI, with cheap CPU usage so it never blocks Moonlight's network setup.
+
+Everything else is the upstream behavior. When neither feature is configured, this fork behaves exactly like upstream. Jump to the [feature details](#auto-connect) at the bottom of this page for setup instructions.
+
+> The build pipeline, controls, NSP forwarder, localization and platform support are unchanged from upstream — see the sections below for those.
 
 ## Screenshots
 <details>
@@ -109,8 +120,8 @@ If you'd like to test your translation, you could follow build instructions, or 
 cd 'folder/to/store/the/sources'
 
 # Clone this repo with submodules
-git clone https://github.com/XITRIX/Moonlight-Switch.git --recursive
-cd Moonlight-Switch
+git clone https://github.com/Destiny12138/Moonlight-Switch-Autoconnect.git --recursive
+cd Moonlight-Switch-Autoconnect
 ```
 
 ### Switch
@@ -240,7 +251,90 @@ open build/tvos/*.xcodeproj
 # 3. Set up Team and Bundle Identifiers in Xcode, then connect devices to run.
 ```
 
+---
+
+# Feature details
+
+The two opt-in features this fork adds over upstream. Skip these sections if you only want the standard upstream behavior.
+
+## Auto-connect
+
+Skip the manual click-through (host list → game list → stream) when you always launch Moonlight to play the same PC + game. If a valid `autoconnect` block is found in `settings.json`, `StreamingView` is pushed on top of `MainActivity` on launch and the stream starts straight away. Disconnect / exit drops you back to the normal UI, exactly as if you had dismissed a stream by hand.
+
+### Setup
+
+1. Pair your host and add at least one favorite once, through the normal UI.
+2. Open `sdmc:/switch/Moonlight-Switch/settings.json` and add an `autoconnect` block at the top level:
+
+   ```json
+   {
+     "hosts": [ ... ],
+     "settings": { ... },
+     "autoconnect": {
+       "host": "192.168.1.10",
+       "app_id": 1234567890
+     }
+   }
+   ```
+
+   | Field    | Type   | Required | Description |
+   | -------- | ------ | -------- | ----------- |
+   | `host`   | string | one of `host`/`mac` | The host's `address` or `remote_address` from the matching `hosts[]` entry. |
+   | `mac`    | string | one of `host`/`mac` | The host's `mac` from the matching `hosts[]` entry. Useful when the LAN address can change. |
+   | `app_id` | int    | yes | The `id` of one of that host's `favorites[]` entries. |
+
+3. Launch Moonlight. If the host **and** the favorite both resolve, streaming starts immediately. If either does not, Moonlight silently falls through to the normal main menu.
+
+### Disable
+
+Delete the `autoconnect` block from `settings.json`. The block is round-tripped on save (so unrelated UI changes — adding a host, toggling a setting — do not wipe it out), but removing it by hand will.
+
+### Caveats
+
+- Auto-connect targets one specific favorite; it does not discover or pair hosts.
+- Make sure the host and favorite resolve before relying on it — a typo in `app_id` just drops you back to the main menu.
+
+## Splash animation
+
+Adds an optional animated boot splash that plays on top of the main UI on Switch startup. Frames are pre-rendered offline to JPGs so playback is cheap (~one CPU core via `stb_image`) and does not steal threads from Moonlight's network / pairing / RTSP setup happening in parallel. Press any controller button to skip.
+
+### Setup
+
+1. Render your source video into `resources/img/splash_frames/`:
+
+   ```bash
+   ffmpeg -i your_video.mp4 \
+       -vf "scale=1280:720,fps=30" -q:v 5 \
+       resources/img/splash_frames/frame_%04d.jpg
+   ```
+
+   Frames must be named `frame_0001.jpg`, `frame_0002.jpg`, ... (4-digit, 1-based). 1280×720 / 30 fps is what the player expects.
+
+2. Update `kTotalFrames` in [app/src/splash_image.cpp](app/src/splash_image.cpp) to match the number of files produced. The player is tolerant of small mismatches (it bails after a few consecutive misses), but a correct value avoids the 32 s safety-timer fallback.
+
+3. Rebuild the `.nro` and reinstall.
+
+### Disable
+
+Leave `resources/img/splash_frames/` empty. The splash is skipped at runtime if `frame_0001.jpg` is missing, so there is no black gap on launch.
+
+### How it works
+
+- A single worker thread `fread`+`stbi_load_from_memory`-decodes one frame ahead.
+- The UI thread does one `nvgUpdateImage` per frame and paints a letterbox-fit pattern.
+- Drains when the worker finishes OR a 32 s safety timer trips, then `popActivity(NONE)` reveals the UI underneath.
+- Frame files are **not** committed to the repo — the top-level `.gitignore` ignores `resources/img/splash_frames/*` and only `.gitkeep` is tracked, so the folder stays in tree but you supply your own assets.
+
+### Why JPGs and not a video file
+
+`ffmpeg`'s H.264 software decoder needs 4 frame threads to keep up at 1080p, which saturates the 3 user-accessible A57 cores on Switch and starves Moonlight's network workers. JPG decode at 720p with `stb_image` takes ~15–25 ms per frame on one core, which fits comfortably in the 33 ms / frame budget at 30 fps and leaves the other two cores free for mDNS / HTTPS pairing / RTSP setup to run in parallel with the splash.
+
+---
+
 ## Credits
+
+Upstream Moonlight-Switch by [XITRIX](https://github.com/XITRIX). This fork only adds the two opt-in features described above; all rendering, streaming, controls and platform support are upstream's work.
+
 Thanks a lot to [Rock88](https://github.com/rock88) and his [Moonlight-NX](https://github.com/rock88/moonlight-nx), lots of streaming code has been lend from it 👍.
 
 [Xfangfang](https://github.com/xfangfang) for maintaining [Borealis](https://github.com/xfangfang/borealis) library. iOS port would not be possible without it. 

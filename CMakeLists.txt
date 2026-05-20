@@ -48,7 +48,7 @@ endif ()
 
 set(VERSION_MAJOR "1")
 set(VERSION_MINOR "4")
-set(VERSION_ALTER "1")
+set(VERSION_ALTER "2")
 set(VERSION_BUILD "1")
 set(PACKAGE_NAME "ru.xitrix.Moonlight")
 set(PSN_TITLE_ID  "MNTL00000")
@@ -430,11 +430,19 @@ else ()
     message("opus: ${OPUS_LIBRARY}")
 
     if(PLATFORM_SWITCH)
+        # Wrap the prebuilt FFmpeg static libs in --start-group / --end-group
+        # so the linker can resolve the circular references between avformat
+        # and avcodec (e.g. avformat's matroska/spdif/hls demuxers call
+        # avcodec helpers like av_adts_header_parse). bz2 is needed by the
+        # matroska demuxer; z by misc avformat code.
         list(APPEND MOONLIGHT_APP_FFMPEG_LIBS
-            ${CMAKE_CURRENT_SOURCE_DIR}/lib/switch/libavcodec.a
+            -Wl,--start-group
             ${CMAKE_CURRENT_SOURCE_DIR}/lib/switch/libavformat.a
+            ${CMAKE_CURRENT_SOURCE_DIR}/lib/switch/libavcodec.a
+            ${CMAKE_CURRENT_SOURCE_DIR}/lib/switch/libswresample.a
             ${CMAKE_CURRENT_SOURCE_DIR}/lib/switch/libavutil.a
-            ${CMAKE_CURRENT_SOURCE_DIR}/lib/switch/libswresample.a)
+            -Wl,--end-group
+            bz2)
     else()
         find_library(AVCODEC_LIBRARY avcodec)
         message("avcodec: ${AVCODEC_LIBRARY}")

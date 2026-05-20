@@ -3,3 +3,9 @@ cmake-build-debug
 libromfs-generator
 build*
 vcpkg_installed
+
+# Splash animation frames are rendered locally from a source video (see
+# README "Splash animation" section). Ignore everything in the folder
+# but keep the folder itself in tree via .gitkeep.
+resources/img/splash_frames/*
+!resources/img/splash_frames/.gitkeep
