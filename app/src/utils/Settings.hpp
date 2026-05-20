@@ -76,6 +76,22 @@ inline bool hosts_match(const Host& lhs, const Host& rhs) {
     return false;
 }
 
+// Optional auto-connect descriptor read from settings.json.
+// When `valid` is true, main() will immediately push a StreamingView on top
+// of MainActivity so that exiting / failing the stream falls back to the
+// normal UI (where the user can re-pair, edit favorites, etc.).
+//
+// `present` tracks whether the source settings.json had an `autoconnect`
+// object at all, so save() can faithfully round-trip the section instead of
+// silently dropping it the first time some unrelated setting is changed.
+struct AutoconnectConfig {
+    bool        present = false; // settings.json contained an "autoconnect" object
+    bool        valid   = false; // present + app_id != 0 + (host or mac non-empty)
+    std::string host;   // address or remoteAddress; matched via Host::has_address
+    std::string mac;    // optional alternative match key
+    int         app_id  = 0;
+};
+
 class Settings : public Singleton<Settings> {
   public:
     [[nodiscard]] std::string working_dir() const { return m_working_dir; }
@@ -94,6 +110,10 @@ class Settings : public Singleton<Settings> {
     [[nodiscard]] std::string gamepad_mapping_path() const { return m_gamepad_mapping_path; }
 
     [[nodiscard]] std::vector<Host> hosts() const { return m_hosts; }
+
+    // Returns the autoconnect descriptor parsed from settings.json. When
+    // `valid` is false (default), main() falls through to MainActivity only.
+    [[nodiscard]] AutoconnectConfig autoconnect() const { return m_autoconnect; }
 
     void add_host(const Host& host);
     void remove_host(const Host& host);
@@ -289,6 +309,8 @@ class Settings : public Singleton<Settings> {
 
     float m_deadzone_stick_left = 0;
     float m_deadzone_stick_right = 0;
+
+    AutoconnectConfig m_autoconnect;
 
     void loadBaseLayouts();
 };

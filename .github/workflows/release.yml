@@ -1,0 +1,101 @@
+name: Release
+
+# Triggered by pushing an annotated or lightweight tag whose name starts with
+# `v`, e.g. `v1.4.2`. Also exposes a `workflow_dispatch` button so you can
+# build a dry-run on demand from the Actions tab without creating a release.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # required by softprops/action-gh-release to create releases
+
+jobs:
+  build-switch:
+    name: Build Switch .nro
+    runs-on: ubuntu-latest
+    container:
+      image: docker://devkitpro/devkita64:latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v1
+        with:
+          submodules: recursive
+
+      - name: Remove useless fonts
+        run: rm -rf ./resources/font
+
+      - name: Remove enet
+        run: dkp-pacman --noconfirm -R switch-enet
+
+      # First cmake run is allowed to fail; it sometimes loses the dkp
+      # toolchain cache on a clean container. The second invocation always
+      # succeeds. This mirrors the regular build workflow.
+      - name: Configure (first pass, allowed to fail)
+        continue-on-error: true
+        run: cmake -B build/switch -DPLATFORM_SWITCH=ON -DUSE_DEKO3D=ON
+
+      - name: Configure (second pass)
+        run: cmake -B build/switch -DPLATFORM_SWITCH=ON -DUSE_DEKO3D=ON
+
+      - name: Build .nro
+        run: make -C build/switch Moonlight.nro -j$(nproc)
+
+      - name: Stage release asset
+        run: |
+          mkdir -p release-assets
+          cp build/switch/Moonlight.nro release-assets/Moonlight-Switch-Autoconnect.nro
+          cp build/switch/Moonlight.elf release-assets/Moonlight-Switch-Autoconnect.elf
+
+      - name: Upload artifact (always, for inspection on workflow_dispatch runs)
+        uses: actions/upload-artifact@master
+        with:
+          name: Moonlight-Switch-Autoconnect
+          path: release-assets/
+
+      - name: Create GitHub Release (tag pushes only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-assets/Moonlight-Switch-Autoconnect.nro
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          body: |
+            ## What's in this build
+
+            A friendly fork of [XITRIX/Moonlight-Switch](https://github.com/XITRIX/Moonlight-Switch) that adds two opt-in features on top of upstream:
+
+            - **Auto-connect** — add an `autoconnect` block to `sdmc:/switch/Moonlight-Switch/settings.json` to jump straight into streaming at launch.
+            - **Splash animation** — play a pre-rendered JPG sequence above the main UI while Moonlight handshakes in the background.
+
+            When neither feature is configured this fork behaves exactly like upstream. See the [README](https://github.com/Destiny12138/Moonlight-Switch-Autoconnect#readme) for full setup instructions.
+
+            ## ⚠️ No splash frames are bundled
+
+            This `.nro` **does not ship with any ready-made splash animation**. The `resources/img/splash_frames/` directory in the source tree is intentionally empty (only a `.gitkeep` placeholder is tracked).
+
+            If you want the splash animation, you need to package your own frames yourself:
+
+            1. Use `ffmpeg` to transcode your source video into `frame_0001.jpg`, `frame_0002.jpg`, … (1280×720, 30 fps) under `resources/img/splash_frames/`:
+               ```bash
+               ffmpeg -i your_video.mp4 \
+                   -vf "scale=1280:720,fps=30" -q:v 5 \
+                   resources/img/splash_frames/frame_%04d.jpg
+               ```
+            2. Update `kTotalFrames` in [`app/src/splash_image.cpp`](https://github.com/Destiny12138/Moonlight-Switch-Autoconnect/blob/master/app/src/splash_image.cpp) to match the actual frame count.
+            3. Rebuild the `.nro` yourself (see the README build instructions). The official artifact attached to this release will never contain frames.
+
+            If you skip this step entirely, Moonlight launches straight into the normal UI — no black screen, no error.
+
+            ## Installation
+
+            1. Download `Moonlight-Switch-Autoconnect.nro` from the assets below.
+            2. Copy it to `sdcard:/switch/Moonlight-Switch/Moonlight.nro` on your Switch SD card.
+            3. Launch via *Title Redirection* / hbmenu as usual.
+
+            ---
