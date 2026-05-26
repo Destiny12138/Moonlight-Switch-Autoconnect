@@ -57,12 +57,21 @@ class MoonlightInputManager : public Singleton<MoonlightInputManager> {
     void updateTouchScreenPanDelta(brls::PanGestureStatus panStatus);
     void reloadButtonMappingLayout();
     void setInputEnabled(bool enabled) { inputEnabled = enabled; }
+    // Reset per-session state (last gamepad states + last controller count)
+    // so that LiSendControllerArrivalEvent is emitted again at the start of
+    // every new streaming session. Without this, the second session in the
+    // same process never sends the arrival event and Sunshine falls back to
+    // its default Xbox 360 virtual pad instead of the DS4 we want (which
+    // exposes gyro/accel from Switch joy-cons). Particularly visible on the
+    // autoconnect path: session #1 (autoconnect) -> PS4, reconnect -> Xbox 360.
+    void resetControllerArrivalState();
     static void leftMouseClick();
     static void rightMouseClick();
 
   private:
     RumbleValues rumbleCache[GAMEPADS_MAX];
     GamepadState lastGamepadStates[GAMEPADS_MAX];
+    int m_lastControllerCount = 0;
     brls::ControllerButton mappingButtons[brls::_BUTTON_MAX];
     std::optional<brls::PanGestureStatus> panStatus;
     std::map<uint32_t, bool> activeTouchIDs;
