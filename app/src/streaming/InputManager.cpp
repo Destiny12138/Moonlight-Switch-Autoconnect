@@ -303,9 +303,21 @@ GamepadState MoonlightInputManager::getControllerState(int controllerNum,
     return gamepadState;
 }
 
-void MoonlightInputManager::handleControllers(bool specialKey) {
-    static int lastControllerCount = 0;
+void MoonlightInputManager::resetControllerArrivalState() {
+    // Called by MoonlightSession::connection_started() so that the *next*
+    // call to handleControllers() detects a controller-count mismatch and
+    // re-emits LiSendControllerArrivalEvent for every connected pad. Without
+    // this reset the arrival event leaks across sessions (m_lastControllerCount
+    // is a singleton member) and Sunshine never learns the controller has
+    // gyro/accel -> falls back to Xbox 360 emulation on session #2 onwards.
+    // Most user-visible with autoconnect: 1st = PS4, reconnect = Xbox 360.
+    m_lastControllerCount = 0;
+    for (int i = 0; i < GAMEPADS_MAX; ++i) {
+        lastGamepadStates[i] = GamepadState{};
+    }
+}
 
+void MoonlightInputManager::handleControllers(bool specialKey) {
     auto controllersCount = brls::Application::getPlatform()
                             ->getInputManager()
                             ->getControllersConnectedCount();
@@ -318,12 +330,12 @@ void MoonlightInputManager::handleControllers(bool specialKey) {
         if (!gamepadState.is_equal(lastGamepadStates[i])) {
             lastGamepadStates[i] = gamepadState;
 
-            if (lastControllerCount != controllersCount) {
-                lastControllerCount = controllersCount;
-                
-                for (int i = 0; i < controllersCount; i++) {
-                    Logger::debug("StreamingView: send features message for controller #{}", i);
-                    LiSendControllerArrivalEvent(i, mappedControllersCount, LI_CTYPE_UNKNOWN, 0, LI_CCAP_RUMBLE | LI_CCAP_ACCEL | LI_CCAP_GYRO);
+            if (m_lastControllerCount != controllersCount) {
+                m_lastControllerCount = controllersCount;
+
+                for (int j = 0; j < controllersCount; j++) {
+                    Logger::debug("StreamingView: send features message for controller #{}", j);
+                    LiSendControllerArrivalEvent(j, mappedControllersCount, LI_CTYPE_UNKNOWN, 0, LI_CCAP_RUMBLE | LI_CCAP_ACCEL | LI_CCAP_GYRO);
                 }
             }
 

@@ -86,6 +86,14 @@ void MoonlightSession::connection_started() {
 
     m_active_session->m_stop_requested = false;
     m_active_session->m_is_active = true;
+
+    // Re-emit LiSendControllerArrivalEvent on every new session. The singleton
+    // MoonlightInputManager otherwise keeps stale per-session counters and
+    // suppresses the arrival on the 2nd+ stream in the same process, which
+    // makes Sunshine drop our gyro/accel capabilities and silently fall back
+    // from DS4 to its default Xbox 360 virtual pad. Especially visible with
+    // autoconnect: 1st run = PS4 (correct), reconnect = Xbox 360 (bug).
+    MoonlightInputManager::instance().resetControllerArrivalState();
 }
 
 void MoonlightSession::connection_terminated(int error_code) {
